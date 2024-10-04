@@ -108,7 +108,7 @@ int main() {
         perror("Thread creation failed");
         exit(EXIT_FAILURE);        
     }
-    safe_free(vptr1); //쓰레드 안에서 ref_cnt 증가시키면 쓰레드 초기화 딜레이 때문에 safe_free안 되는 경우 있음
+    safe_free(vptr1); //쓰레드 안에서 ref_cnt 증가시키도록 만들면 쓰레드 생성 직후엔 딜레이 때문에 safe_free안 되는 경우 있음
     vptr1->ref_cnt--;
     
     //test 5
