@@ -6,19 +6,23 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define ALLOC 0
+#define VIRT_FREED 1
+#define REAL_FREED 2
+
 typedef struct {
     void* addr;
-    uint8_t idx;
-    uint8_t byte_size;
-    bool free_flag;
+    uint16_t byte_size;
+    uint8_t free_flag; 
+    //0b00: not freed, 0b01: virt freed, 
+    //0b10: real freed
     uint8_t ref_cnt;
 } V_PTR;
 
 typedef struct {
     V_PTR* table;
     unsigned cnt;
-    //unsigned last_alloc_idx;
-    //unsigned last_free_idx;
+    unsigned last_alloc_idx;
 } V_CTRL_BLK;
 
 

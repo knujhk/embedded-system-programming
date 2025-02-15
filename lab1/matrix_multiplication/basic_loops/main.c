@@ -1,6 +1,7 @@
 ﻿#include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <unistd.h>
 
 #define SIZ 2000
 #define N_BUF 100
@@ -16,6 +17,10 @@ void receive_channel(int* buffer, int N) {
 int main(void)
 {
 
+    struct timespec ts_start, ts_end;
+    time_t t_start, t_end;
+    double elapsed;
+
     int i,j,k,a;
     int w1,w2;
     int *A_col, *A_row;
@@ -26,12 +31,15 @@ int main(void)
     for(i=0; i<SIZ; i++) 
         C[i] = (int*)calloc(SIZ, sizeof(int));  //C의 모든 요소 0으로 초기화
 
+    printf("current process id: %d\n",getpid());
+
     printf("matrix initialization wait:\n");
     scanf("%d", &a);
 
     //시간 찍기
     printf("matrix product:\n");
-    clock_t before = clock();
+    //clock_t before = clock();
+    clock_gettime(CLOCK_REALTIME,&ts_start);
 
     //ijk
     for(i = 0; i < SIZ; i++){
@@ -49,41 +57,45 @@ int main(void)
     }
 
     //ikj
-    for(i = 0; i < SIZ; i++){
-		A_row = (int*)malloc(sizeof(int)*SIZ); //i row 
-	    receive_channel(A_row,SIZ);
-        for(k = 0; k < SIZ; k++){
-            B_row = (int*)malloc(sizeof(int)*SIZ); //k row
-            receive_channel(B_row,SIZ);
-            for(j = 0; j < SIZ; j++){
-                C[i][j] += A_row[k] * B_row[j];
-            }
-            free(B_row);
-        }
-        free(A_row);
-    }
+    // for(i = 0; i < SIZ; i++){
+	// 	   A_row = (int*)malloc(sizeof(int)*SIZ); //i row 
+	//     receive_channel(A_row,SIZ);
+    //     for(k = 0; k < SIZ; k++){
+    //         B_row = (int*)malloc(sizeof(int)*SIZ); //k row
+    //         receive_channel(B_row,SIZ);
+    //         for(j = 0; j < SIZ; j++){
+    //             C[i][j] += A_row[k] * B_row[j];
+    //         }
+    //         free(B_row);
+    //     }
+    //     free(A_row);
+    // }
 
     //kij
-    for(k = 0; k < SIZ; k++){
-        A_col = (int*)malloc(sizeof(int)*SIZ);
-        B_row = (int*)malloc(sizeof(int)*SIZ);
-        receive_channel(A_col,SIZ);  //A의 k번째 열
-        receive_channel(B_row,SIZ);  //B의 k번째 행
+    // for(k = 0; k < SIZ; k++){
+    //     A_col = (int*)malloc(sizeof(int)*SIZ);
+    //     B_row = (int*)malloc(sizeof(int)*SIZ);
+    //     receive_channel(A_col,SIZ);  //A의 k번째 열
+    //     receive_channel(B_row,SIZ);  //B의 k번째 행
 
-        for(i = 0; i < SIZ; i++){
-            for(j = 0; j < SIZ; j++){
-                C[i][j] += A_col[i] * B_row[j];
-            }
-        }
-        free(A_col);
-        free(B_row);
-    }
+    //     for(i = 0; i < SIZ; i++){
+    //         for(j = 0; j < SIZ; j++){
+    //             C[i][j] += A_col[i] * B_row[j];
+    //         }
+    //     }
+    //     free(A_col);
+    //     free(B_row);
+    // }
 
     
     //시간 찍기
-    clock_t after = clock();
     printf("matrix result:\n");
-    printf("time : %lf\n",(double)(after-before) / CLOCKS_PER_SEC);
+    clock_gettime(CLOCK_REALTIME,&ts_end);
+    elapsed = ts_end.tv_sec-ts_start.tv_sec;
+    elapsed += (double)(ts_end.tv_nsec-ts_start.tv_nsec)/1000000000.0;
+    printf("time : %lf\n",elapsed);
+    //clock_t after = clock();
+    //printf("time : %lf\n",(double)(after-before) / CLOCKS_PER_SEC);
 
     FILE* fp = fopen("output.txt", "w");
     if(fp==NULL)
