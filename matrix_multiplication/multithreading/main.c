@@ -108,41 +108,41 @@ int main(void)
     // }
 
     //ikj
-    // for(int i = 0; i < SIZ; i++){
-    //     receive_channel(B[i],SIZ);
-    // }
+    for(int i = 0; i < SIZ; i++){
+        receive_channel(B[i],SIZ);
+    }
     
-    // printf("probe");
-    // int width = SIZ / N_THREAD;
-    // for(int i = 0; i < N_THREAD; i++){
-    //     ikj_arg[i].row_start = i * width;
-    //     ikj_arg[i].row_end = (i+1) * width;
-    //     ikj_arg[i].B = B;
-    //     ikj_arg[i].C = C;
-    //     res[i] = pthread_create(&thread[i],NULL,thread_ikj_vectorProduct,&ikj_arg[i]);
-    // }
+    printf("probe");
+    int width = SIZ / N_THREAD;
+    for(int i = 0; i < N_THREAD; i++){
+        ikj_arg[i].row_start = i * width;
+        ikj_arg[i].row_end = (i+1) * width;
+        ikj_arg[i].B = B;
+        ikj_arg[i].C = C;
+        res[i] = pthread_create(&thread[i],NULL,thread_ikj_vectorProduct,&ikj_arg[i]);
+    }
 
-    // for(int i = 0; i < N_THREAD; i++){
-    //     pthread_join(thread[i], &thread_result);
-    // }
+    for(int i = 0; i < N_THREAD; i++){
+        pthread_join(thread[i], &thread_result);
+    }
     
     
     //kij
     //SIZ가 동적으로 변한다면? 멀티스레딩 적용 안 했을 땐 SIZ가 4의 배수이기만 하면 됨.
     //구조 변경 필요 - A의 k열 , B의 k행 가지고 siz*siz 매트릭스에 값 채워넣는 태스크 안에서 스레드 나누기
     //스레드 생성 소멸 오버헤드가 얼마나 영향을 미칠지도 생각해보자.
-    int width = SIZ / N_THREAD;
-    for(int i = 0; i < N_THREAD; i++){
-        kij_arg[i].k_start = i * width; 
-        kij_arg[i].k_end = (i+1) * width;
-        kij_arg[i].C = C;
-        kij_arg[i].thread_id = i;
-        res[i] = pthread_create(&thread[i],NULL,thread_kij_vectorProduct,(void*)&kij_arg[i]);
-    }
+    // int width = SIZ / N_THREAD;
+    // for(int i = 0; i < N_THREAD; i++){
+    //     kij_arg[i].k_start = i * width; 
+    //     kij_arg[i].k_end = (i+1) * width;
+    //     kij_arg[i].C = C;
+    //     kij_arg[i].thread_id = i;
+    //     res[i] = pthread_create(&thread[i],NULL,thread_kij_vectorProduct,(void*)&kij_arg[i]);
+    // }
 
-    for(int i = 0; i < N_THREAD; i++){
-        pthread_join(thread[i],NULL);
-    }
+    // for(int i = 0; i < N_THREAD; i++){
+    //     pthread_join(thread[i],NULL);
+    // }
 
     
 
@@ -179,7 +179,46 @@ int main(void)
     scanf("%d", &a);
     return 0;
 }
+void* thread_ijk_vectorProduct(void* argument)
+{
+    thread_arg_ijk* arg = (thread_arg_ijk*)argument;
+    int* A_row;
+    int* B_col;
+    int** C = arg->C;
+    int sum;
 
+    int stride = STRIDE*N_THREAD; //여기서 매크로 STRIDE의 의미는 한 스레드가 처리하는 너비를 의미
+    
+    __m128i vr = _mm_setzero_si128();
+    for(int i = arg->i_start; i < SIZ; i += stride)
+    {
+        for(int i_ = 0; i_ < STRIDE; i_++)
+        {
+            A_row = (int*)malloc(sizeof(int)*SIZ); // row i+i_ of A
+            receive_channel(A_row,SIZ);
+            for(int j = 0; j < SIZ; j++)
+            {
+                B_col = (int*)malloc(sizeof(int)*SIZ);
+                receive_channel(B_col,SIZ);
+                for(int k = 0; k < SIZ; k+=4)
+                {
+                    __m128i va = _mm_loadu_si128((__m128i const*)(A_row+k));
+                    __m128i vb = _mm_loadu_si128((__m128i const*)(B_col+k));
+                    vr = _mm_mullo_epi32(va, vb);
+                    //hadd로 4바이트 공간에 모아주는 계산 
+                    vr = _mm_hadd_epi32(vr,vr);
+                    vr = _mm_hadd_epi32(vr,vr);
+                    C[i+i_][j] += _mm_extract_epi32(vr, 0);
+                    //C[i][j] += A_row[k] * B_col[k];
+                }
+                free(B_col);
+            }
+            free(A_row);
+        }
+    }
+
+    return NULL;
+}
 void* thread_ikj_vectorProduct(void* argument)
 {
     thread_arg_ikj* arg = (thread_arg_ikj*)argument;
@@ -198,9 +237,6 @@ void* thread_ikj_vectorProduct(void* argument)
         for(int k = 0; k < SIZ; k++){
             int a = A_row[k];
             for(int j = 0; j < SIZ; j+=4){
-            //synchronization을 하는 게 아니라 원자적 연산이 목적이라면 특수 명령어를 쓰는게 훨씬 빠르다.
-            //애초에 각 스레드가 독립적으로 작업할 수 있도록 태스크를 나눴어야 함
-            //mutual exclusion 비용을 간과했다.
             __m128i va = _mm_set1_epi32(a);
             __m128i vb = _mm_loadu_si128((__m128i const*)(B[i]+j));
 
@@ -226,6 +262,7 @@ void* thread_kij_vectorProduct(void* argument)
     int *A_col,*B_row;
     int prod;
     volatile bool check;
+    int temp;
     
     for(int k = k_start; k < k_end; k++){
         A_col = (int*)malloc(sizeof(int)*SIZ);
@@ -254,7 +291,8 @@ void* thread_kij_vectorProduct(void* argument)
         //no simd
         for(int i = 0; i < SIZ; i++){
             for(int j = 0; j < SIZ; j++){
-                C[i][j] += A_col[i] * B_row[j];
+                temp = A_col[i] * B_row[j];
+                __sync_fetch_and_add(&(C[i][j]),temp);
             //printf("thread %d working\n",thread_id);
             }
         }
@@ -265,38 +303,3 @@ void* thread_kij_vectorProduct(void* argument)
     return NULL;
 }
 
-void* thread_ijk_vectorProduct(void* argument)
-{
-    thread_arg_ijk* arg = (thread_arg_ijk*)argument;
-    int* A_row;
-    int* B_col;
-    int** C = arg->C;
-    int sum;
-
-    int stride = STRIDE*N_THREAD;
-    
-    for(int i = arg->i_start; i < SIZ; i += stride)
-    {
-        for(int i_ = 0; i_ < STRIDE; i_++)
-        {
-            A_row = (int*)malloc(sizeof(int)*SIZ); // row i+i_ of A
-            receive_channel(A_row,SIZ);
-            for(int j = 0; j < SIZ; j++)
-            {
-                B_col = (int*)malloc(sizeof(int)*SIZ);
-                receive_channel(B_col,SIZ);
-                sum = 0;
-                for(int k = 0; k < SIZ; k++)
-                {
-                    sum += A_row[k] * B_col[k];
-                }
-                //printf("C[%d][%d] = %d\n",i+i_,j,sum);
-                C[i+i_][j] = sum;
-                free(B_col);
-            }
-            free(A_row);
-        }
-    }
-
-    return NULL;
-}
